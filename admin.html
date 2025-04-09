@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Админ-панель</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f9f9f9; margin: 0; padding: 20px; }
+    .order { background: white; border-radius: 12px; padding: 15px; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+    .status { font-weight: bold; color: green; }
+    select { margin-top: 10px; }
+    .warn { color: red; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h2>Админка (WebApp)</h2>
+  <div id="panel">Загрузка...</div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+
+    const allowed = [799869557, 565652402];
+    const user = tg.initDataUnsafe?.user;
+
+    if (!user) {
+      document.getElementById("panel").innerHTML = "<p class='warn'>⚠ Откройте через Telegram WebApp (кнопка в боте)</p>";
+    } else if (!allowed.includes(user.id)) {
+      document.getElementById("panel").innerHTML = "<p class='warn'>⛔ Доступ запрещён</p>";
+    } else {
+      loadOrders();
+    }
+
+    function loadOrders() {
+      fetch("/admin/orders").then(res => res.json()).then(data => {
+        const panel = document.getElementById("panel");
+        panel.innerHTML = "";
+        data.forEach((order, i) => {
+          const div = document.createElement("div");
+          div.className = "order";
+          div.innerHTML = `
+            <strong>@${order.username}</strong><br>
+            <span class="status">Статус: ${order.status}</span><br>
+            <small>${order.timestamp}</small><br>
+            <ul>${order.cart.map(item => `<li>${item}</li>`).join("")}</ul>
+            <select onchange="updateStatus(${i}, this.value)">
+              <option value="ожидает" ${order.status === "ожидает" ? "selected" : ""}>ожидает</option>
+              <option value="оплачен" ${order.status === "оплачен" ? "selected" : ""}>оплачен</option>
+              <option value="отменён" ${order.status === "отменён" ? "selected" : ""}>отменён</option>
+            </select>
+          `;
+          panel.appendChild(div);
+        });
+      });
+    }
+
+    function updateStatus(index, status) {
+      fetch('/admin/update_status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ index, status })
+      }).then(() => loadOrders());
+    }
+  </script>
+</body>
+</html>

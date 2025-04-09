@@ -14,7 +14,7 @@ orders = []
 allowed_ids = [799869557, 565652402]
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROUP_CHAT_ID = -4796322602
+GROUP_CHAT_ID = -1002622271091
 
 def send_order_to_group(order):
     items = "\n".join(order["cart"])

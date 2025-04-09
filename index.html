@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Магазин</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body { font-family: sans-serif; background: #f2f4f8; margin: 0; padding: 0; }
+    .tabs { display: flex; overflow-x: auto; padding: 10px; background: white; }
+    .tab { padding: 8px 16px; margin-right: 8px; border-radius: 20px; background: #ddd; cursor: pointer; }
+    .tab.active { background: #4a90e2; color: white; }
+    .products { display: flex; flex-wrap: wrap; justify-content: center; padding: 10px; gap: 10px; }
+    .card { width: 150px; background: white; border-radius: 10px; padding: 10px; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+    .card img { width: 100px; height: 100px; object-fit: contain; }
+    .btn { margin-top: 8px; background: #4a90e2; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+    #cartModal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; }
+    #cartContent { background: white; padding: 20px; border-radius: 10px; width: 90%; max-width: 400px; max-height: 80%; overflow: auto; }
+    .cart-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .qty-controls button { padding: 2px 6px; margin: 0 4px; }
+    .total { margin-top: 10px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="tabs" id="tabs"></div>
+  <div class="products" id="products"></div>
+  <div id="cartModal">
+    <div id="cartContent">
+      <h3>🛒 Ваша корзина</h3>
+      <div id="cartItems"></div>
+      <div class="total" id="cartTotal"></div>
+      <button class="btn" onclick="submitCart()">✅ Оформить заказ</button>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+
+    let allProducts = [], currentCategory = "", cart = {};
+
+    fetch("/products.json")
+      .then(res => res.json())
+      .then(data => {
+        allProducts = data;
+        const cats = [...new Set(data.map(p => p.category))];
+        currentCategory = cats[0];
+        renderTabs(cats);
+        renderProducts();
+      });
+
+    function renderTabs(categories) {
+      const el = document.getElementById("tabs");
+      el.innerHTML = "";
+      categories.forEach(cat => {
+        const tab = document.createElement("div");
+        tab.className = "tab" + (cat === currentCategory ? " active" : "");
+        tab.innerText = cat;
+        tab.onclick = () => {
+          currentCategory = cat;
+          renderTabs(categories);
+          renderProducts();
+        };
+        el.appendChild(tab);
+      });
+    }
+
+    function renderProducts() {
+      const el = document.getElementById("products");
+      el.innerHTML = "";
+      allProducts.filter(p => p.category === currentCategory).forEach(p => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <img src="${p.img}" />
+          <div>${p.name}</div>
+          <div><b>${p.price} zł</b></div>
+          <button class="btn" onclick='addToCart(${JSON.stringify(p)})'>В корзину</button>
+        `;
+        el.appendChild(card);
+      });
+    }
+
+    function addToCart(p) {
+      if (cart[p.id]) {
+        cart[p.id].qty += 1;
+      } else {
+        cart[p.id] = { ...p, qty: 1 };
+      }
+      renderCart();
+      tg.showAlert("Добавлено в корзину: " + p.name);
+    }
+
+    function renderCart() {
+      const el = document.getElementById("cartItems");
+      const totalEl = document.getElementById("cartTotal");
+      el.innerHTML = "";
+      let total = 0;
+      Object.values(cart).forEach(item => {
+        total += item.price * item.qty;
+        const div = document.createElement("div");
+        div.className = "cart-item";
+        div.innerHTML = `
+          <span>${item.name} (${item.qty}×${item.price})</span>
+          <div class="qty-controls">
+            <button onclick="changeQty(${item.id}, -1)">-</button>
+            <button onclick="changeQty(${item.id}, 1)">+</button>
+          </div>
+        `;
+        el.appendChild(div);
+      });
+      totalEl.innerText = "Итого: " + total + " zł";
+      document.getElementById("cartModal").style.display = "flex";
+    }
+
+    function changeQty(id, delta) {
+      if (cart[id]) {
+        cart[id].qty += delta;
+        if (cart[id].qty <= 0) delete cart[id];
+      }
+      renderCart();
+    }
+
+    function submitCart() {
+      const user = tg.initDataUnsafe?.user || {};
+      const cartItems = Object.values(cart).map(i => `${i.name} (${i.qty}×${i.price} zł)`);
+      fetch('/api/cart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id || null,
+          username: user.username || "неизвестен",
+          cart: cartItems
+        })
+      }).then(() => {
+        tg.showAlert("✅ Спасибо за заказ! Мы свяжемся с вами для подтверждения.");
+        cart = {};
+        document.getElementById("cartModal").style.display = "none";
+      });
+    }
+
+    tg.MainButton.setText("🛒 Корзина");
+    tg.MainButton.show();
+    tg.MainButton.onClick(renderCart);
+  </script>
+</body>
+</html>

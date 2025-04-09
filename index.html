@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Магазин</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body { font-family: sans-serif; background: #f2f4f8; margin: 0; padding: 0; }
+    .tabs { display: flex; background: white; border-bottom: 1px solid #ccc; }
+    .tab { flex: 1; text-align: center; padding: 10px; cursor: pointer; }
+    .tab.active { background: #4a90e2; color: #fff; font-weight: bold; }
+    .products, .profile { padding: 15px; }
+    .card { width: 150px; background: white; border-radius: 10px; padding: 10px; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin: 5px auto; }
+    .card img { width: 100px; height: 100px; object-fit: contain; }
+    .btn { margin-top: 8px; background: #4a90e2; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+    .profile-order { background: #fff; margin-bottom: 10px; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+  </style>
+</head>
+<body>
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('shop')">🛒 Товары</div>
+    <div class="tab" onclick="showTab('profile')">👤 Профиль</div>
+  </div>
+  <div id="shopTab" class="products"></div>
+  <div id="profileTab" class="profile" style="display:none"></div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+    let allProducts = [];
+    const user = tg.initDataUnsafe?.user || {};
+    const userId = user.id;
+
+    fetch("/products.json")
+      .then(res => res.json())
+      .then(data => {
+        allProducts = data;
+        renderProducts();
+      });
+
+    function renderProducts() {
+      const el = document.getElementById("shopTab");
+      el.innerHTML = "";
+      allProducts.forEach(p => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <img src="${p.img}" />
+          <div>${p.name}</div>
+          <div><b>${p.price} zł</b></div>
+          <button class="btn" onclick='addToCart(${JSON.stringify(p)})'>В корзину</button>
+        `;
+        el.appendChild(card);
+      });
+    }
+
+    const cart = {};
+    function addToCart(p) {
+      if (cart[p.id]) cart[p.id].qty += 1;
+      else cart[p.id] = { ...p, qty: 1 };
+      tg.showAlert("Добавлено в корзину: " + p.name);
+    }
+
+    function showTab(tab) {
+      document.getElementById("shopTab").style.display = tab === "shop" ? "block" : "none";
+      document.getElementById("profileTab").style.display = tab === "profile" ? "block" : "none";
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      document.querySelectorAll(".tab")[tab === "shop" ? 0 : 1].classList.add("active");
+
+      if (tab === "profile") loadProfile();
+    }
+
+    function loadProfile() {
+      const el = document.getElementById("profileTab");
+      el.innerHTML = "<b>Загрузка заказов...</b>";
+      fetch("/profile/" + userId)
+        .then(res => res.json())
+        .then(data => {
+          if (!data.length) return el.innerHTML = "<p>У вас пока нет заказов.</p>";
+          el.innerHTML = "<h3>Ваши заказы</h3>";
+          data.reverse().forEach(o => {
+            const div = document.createElement("div");
+            div.className = "profile-order";
+            div.innerHTML = `
+              <div><b>Статус:</b> ${o.status}</div>
+              <div><b>Дата:</b> ${o.timestamp}</div>
+              <div><b>Товары:</b><br> ${o.cart.map(c => `<div>${c}</div>`).join("")}</div>
+            `;
+            el.appendChild(div);
+          });
+        });
+    }
+
+    function submitCart() {
+      const cartItems = Object.values(cart).map(i => `${i.name} (${i.qty}×${i.price} zł)`);
+      fetch('/api/cart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId || null,
+          username: user.username || "неизвестен",
+          cart: cartItems
+        })
+      }).then(() => {
+        tg.showAlert("✅ Спасибо за заказ! Мы свяжемся с вами для подтверждения.");
+        Object.keys(cart).forEach(k => delete cart[k]);
+      });
+    }
+
+    tg.MainButton.setText("Оформить заказ");
+    tg.MainButton.show();
+    tg.MainButton.onClick(submitCart);
+  </script>
+
+<div id="cartModal" style="display:none; position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.5); align-items:center; justify-content:center;">
+  <div style="background:#fff; padding:20px; border-radius:10px; width:90%; max-width:400px; max-height:80%; overflow:auto;">
+    <h3>🛒 Ваша корзина</h3>
+    <div id="cartItemsList"></div>
+    <div style="margin-top:10px;" id="cartTotal"></div>
+    <button onclick="submitCart()" class="btn">✅ Оформить заказ</button>
+    <button onclick="hideCart()" class="btn" style="background:#ccc; color:#000; margin-top:5px;">🔙 Продолжить покупки</button>
+  </div>
+</div>
+<script>
+function showCart() {
+  const list = document.getElementById("cartItemsList");
+  const totalEl = document.getElementById("cartTotal");
+  let total = 0;
+  list.innerHTML = "";
+  Object.values(cart).forEach(i => {
+    total += i.qty * i.price;
+    const item = document.createElement("div");
+    item.innerText = `${i.name} (${i.qty}×${i.price} zł)`;
+    list.appendChild(item);
+  });
+  totalEl.innerText = "Итого: " + total + " zł";
+  document.getElementById("cartModal").style.display = "flex";
+}
+function hideCart() {
+  document.getElementById("cartModal").style.display = "none";
+}
+tg.MainButton.setText("🛒 Корзина");
+tg.MainButton.show();
+tg.MainButton.onClick(showCart);
+</script>
+</body>
+
+</html>

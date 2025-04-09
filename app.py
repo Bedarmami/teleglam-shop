@@ -10,7 +10,7 @@ CORS(app)
 orders = []
 allowed_ids = [799869557, 565652402]
 
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+BOT_TOKEN = "6342446544:AAFcazjACjZnRfgUypEGOqPupbiNL-wFBgA"
 GROUP_CHAT_ID = -4796322602  # группа Владислава
 
 def send_order_to_group(order):

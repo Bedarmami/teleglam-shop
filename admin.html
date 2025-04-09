@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Бабло — админ-панель</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }
+    header { background: #4a90e2; color: white; padding: 16px; font-size: 20px; text-align: center; }
+    .tabs { display: flex; background: #fff; border-bottom: 1px solid #ccc; }
+    .tab { flex: 1; text-align: center; padding: 10px; cursor: pointer; }
+    .tab.active { background: #4a90e2; color: #fff; font-weight: bold; }
+    .content { padding: 15px; }
+    .order, .product, .admin { background: #fff; padding: 12px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+    input, button { width: 100%; margin-top: 5px; padding: 6px; border-radius: 5px; border: 1px solid #ccc; }
+    button { background: #4a90e2; color: white; border: none; cursor: pointer; margin-top: 8px; }
+    .danger { background: #e74c3c; }
+  </style>
+</head>
+<body>
+  <header>💰 Панель Бабло</header>
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('orders')">📬 Заказы</div>
+    <div class="tab" onclick="showTab('products')">📦 Товары</div>
+    <div class="tab" onclick="showTab('admins')">🛡 Админы</div>
+  
+    <div class="tab" onclick="showTab('analytics')">📊 Аналитика</div>
+  </div>
+  <div class="content">
+    ...
+    <div id="analyticsTab" style="display:none">
+      <h3>📈 Продажи по дням</h3>
+      <div id="analyticsContent">Загрузка...</div>
+    </div>
+
+    <div id="ordersTab">
+      <div class="tabs" style="margin-top: 10px;">
+        <div class="tab active" onclick="filterOrders('ожидает')">⏳ Ожидают</div>
+        <div class="tab" onclick="filterOrders('оплачен')">✅ Оплачены</div>
+        <div class="tab" onclick="filterOrders('отменён')">❌ Отменены</div>
+      </div>
+      <div id="ordersContent">Загрузка заказов...</div>
+    </div>
+    <div id="productsTab" style="display:none">
+      <div id="productList">Загрузка товаров...</div>
+      <h3>➕ Новый товар</h3>
+      <div class="product">
+        <input placeholder="Название" id="newName">
+        <input placeholder="Цена" type="number" id="newPrice">
+        <input placeholder="Категория" id="newCategory">
+        <input placeholder="Ссылка на изображение" id="newImg">
+        <button onclick="addProduct()">Добавить</button>
+      </div>
+    </div>
+    <div id="adminsTab" style="display:none">
+      <div id="adminList">Загрузка админов...</div>
+      <input id="newAdminId" placeholder="Новый Telegram ID">
+      <button onclick="addAdmin()">Добавить администратора</button>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+    let orders = [];
+    let products = [];
+    let admins = [];
+    let currentStatus = "ожидает";
+
+    function showTab(tab) {
+      document.getElementById("analyticsTab").style.display = tab === "analytics" ? "block" : "none";
+      if (tab === "analytics") loadAnalytics();
+      document.querySelectorAll(".content > div").forEach(div => div.style.display = "none");
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      if (tab === 'orders') {
+        document.getElementById("ordersTab").style.display = "block";
+        document.querySelectorAll(".tab")[0].classList.add("active");
+      } else if (tab === 'products') {
+        document.getElementById("productsTab").style.display = "block";
+        document.querySelectorAll(".tab")[1].classList.add("active");
+      } else if (tab === 'admins') {
+        document.getElementById("adminsTab").style.display = "block";
+        document.querySelectorAll(".tab")[2].classList.add("active");
+      }
+    }
+
+    function filterOrders(status) {
+      currentStatus = status;
+      document.querySelectorAll("#ordersTab .tab").forEach(t => t.classList.remove("active"));
+      if (status === "ожидает") document.querySelectorAll("#ordersTab .tab")[0].classList.add("active");
+      if (status === "оплачен") document.querySelectorAll("#ordersTab .tab")[1].classList.add("active");
+      if (status === "отменён") document.querySelectorAll("#ordersTab .tab")[2].classList.add("active");
+      renderOrders();
+    }
+
+    function renderOrders() {
+      const el = document.getElementById("ordersContent");
+      el.innerHTML = "";
+      orders.filter(o => o.status === currentStatus).forEach((o, i) => {
+        const div = document.createElement("div");
+        div.className = "order";
+        div.innerHTML = `
+          <b>@${o.username}</b><br>
+          <small>${o.timestamp}</small><br>
+          ${o.cart.map(item => `<div>${item}</div>`).join("")}
+          <div>Статус: <b>${o.status}</b></div>
+          <select onchange="updateStatus(${i}, this.value)">
+            <option>ожидает</option>
+            <option>оплачен</option>
+            <option>отменён</option>
+          </select>
+        `;
+        el.appendChild(div);
+      });
+    }
+
+    function updateStatus(index, status) {
+      fetch("/admin/update_status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ index, status })
+      }).then(() => {
+        orders[index].status = status;
+        renderOrders();
+      });
+    }
+
+    function renderProducts() {
+      const list = document.getElementById("productList");
+      list.innerHTML = "";
+      products.forEach((p, i) => {
+        const div = document.createElement("div");
+        div.className = "product";
+        div.innerHTML = `
+          <input value="${p.name}" onchange="products[${i}].name=this.value" />
+          <input type="number" value="${p.price}" onchange="products[${i}].price=parseInt(this.value)" />
+          <input value="${p.category}" onchange="products[${i}].category=this.value" />
+          <input value="${p.img}" onchange="products[${i}].img=this.value" />
+          <button onclick="saveProducts()">💾 Сохранить</button>
+          <button class="danger" onclick="deleteProduct(${i})">🗑 Удалить</button>
+        `;
+        list.appendChild(div);
+      });
+    }
+
+    function deleteProduct(i) {
+      products.splice(i, 1);
+      renderProducts();
+    }
+
+    function addProduct() {
+      const name = document.getElementById("newName").value;
+      const price = parseInt(document.getElementById("newPrice").value);
+      const category = document.getElementById("newCategory").value;
+      const img = document.getElementById("newImg").value;
+      const id = products.length ? Math.max(...products.map(p => p.id)) + 1 : 1;
+      products.push({ id, name, price, category, img });
+      renderProducts();
+    }
+
+    function saveProducts() {
+      fetch("/admin/save_products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(products)
+      }).then(() => tg.showAlert("✅ Товары сохранены"));
+    }
+
+    function renderAdmins() {
+      const el = document.getElementById("adminList");
+      el.innerHTML = admins.map((id, i) =>
+        `<div class="admin">ID: ${id} <button class="danger" onclick="removeAdmin(${i})">Удалить</button></div>`
+      ).join("");
+    }
+
+    function addAdmin() {
+      const newId = parseInt(document.getElementById("newAdminId").value);
+      if (!admins.includes(newId)) {
+        admins.push(newId);
+        saveAdmins();
+      }
+    }
+
+    function removeAdmin(i) {
+      admins.splice(i, 1);
+      saveAdmins();
+    }
+
+    function saveAdmins() {
+      fetch("/admin/save_admins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(admins)
+      }).then(() => renderAdmins());
+    }
+
+    fetch("/admin/orders").then(res => res.json()).then(data => {
+      orders = data;
+      renderOrders();
+    });
+
+    fetch("/products.json").then(res => res.json()).then(data => {
+      products = data;
+      renderProducts();
+    });
+
+    fetch("/admin/admins").then(res => res.json()).then(data => {
+      admins = data;
+      renderAdmins();
+    });
+  </script>
+</body>
+</html>
+
+<script>
+function loadAnalytics() {
+  fetch("/admin/analytics").then(res => res.json()).then(data => {
+    const el = document.getElementById("analyticsContent");
+    el.innerHTML = "<table style='width:100%; border-collapse:collapse;' border='1' cellpadding='8'><tr><th style='text-align:left;'>Дата</th><th style='text-align:center;'>Заказов</th><th style='text-align:right;'>Сумма (zł)</th></tr>" +
+      data.by_day.map(d => `<tr><td>${d.date}</td><td>${d.orders}</td><td>${d.total}</td></tr>`).join("") +
+      `</table><br><b>Всего заказов:</b> ${data.orders}<br><b>Всего доход:</b> ${data.total} zł`;
+  });
+}
+</script>
